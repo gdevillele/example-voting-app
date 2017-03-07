@@ -10,69 +10,100 @@ function build()
 	app.worker.build()
 end
 
---
-function preRun()
+-- build and run app
+function up()
 	print("🐳 > building images...")
 	build()
+
 	print("🐳 > creating networks...")
 	utils.createNetworkIfNeeded(app.front_tier.name)
 	utils.createNetworkIfNeeded(app.back_tier.name)
+
 	print("🐳 > creating volume...")
 	utils.createVolumeIfNeeded(app.db_data.name)
-end
-
--- run app
-function up()
-	preRun()
 
 	print("🐳 > create containers...")
 	app.redis.run()
 	app.db.run()
-
 	app.worker.run()
 	app.result.run()
 	app.vote.run()
 end
 
--- dev python "vote" app
-function devVote()
-	preRun()
+-- dev python "vote" program
+function dev_vote()
+	print("🐳 > building images...")
+	build()
+
+	print("🐳 > creating networks...")
+	utils.createNetworkIfNeeded(app.front_tier.name)
+	utils.createNetworkIfNeeded(app.back_tier.name)
+
+	print("🐳 > creating volume...")
+	utils.createVolumeIfNeeded(app.db_data.name)
 
 	print("🐳 > create containers...")
 	app.redis.run()
 	app.db.run()
-
 	app.worker.run()
 	app.result.run()
 	app.vote.dev()
 end
 
--- dev node "result" app
-function devResult()
-	preRun()
+-- dev node "result" program
+function dev_result()
+	print("🐳 > building images...")
+	build()
+
+	print("🐳 > creating networks...")
+	utils.createNetworkIfNeeded(app.front_tier.name)
+	utils.createNetworkIfNeeded(app.back_tier.name)
+
+	print("🐳 > creating volume...")
+	utils.createVolumeIfNeeded(app.db_data.name)
 
 	print("🐳 > create containers...")
 	app.redis.run()
 	app.db.run()
-
 	app.worker.run()
 	app.vote.run()
 	app.result.dev()
 end
 
+-- dev .NET "worker" program
+function dev_worker()
+	print("🐳 > building images...")
+	build()
+
+	print("🐳 > creating networks...")
+	utils.createNetworkIfNeeded(app.front_tier.name)
+	utils.createNetworkIfNeeded(app.back_tier.name)
+
+	print("🐳 > creating volume...")
+	utils.createVolumeIfNeeded(app.db_data.name)
+
+	print("🐳 > create containers...")
+	app.redis.run()
+	app.db.run()
+	app.vote.run()
+	app.result.run()
+	app.worker.dev()
+end
+
+
 
 app = {}
+-- networks
+app.front_tier = {}
+app.back_tier = {}
+-- volumes
+app.db_data = {}
 -- containers
 app.vote = {}
 app.result = {}
 app.worker = {}
 app.redis = {}
 app.db = {}
--- volumes
-app.db_data = {}
--- networks
-app.front_tier = {}
-app.back_tier = {}
 
 
 
@@ -110,11 +141,17 @@ app.vote.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
 		if service.image == app.vote.image then
-			docker.cmd('service update --replicas 3 --update-delay 10s --force ' .. service.id)
+			docker.cmd('service update \
+			--replicas 1 \
+			--update-delay 10s \
+			--force \
+			' .. service.id)
 			return
 		end
 	end
-	docker.cmd('service create --replicas 3 -p 5000:80 \
+	docker.cmd('service create \
+	--replicas 1 \
+	-p 5000:80 \
 	--network=' .. app.front_tier.name .. ' \
 	--network=' .. app.back_tier.name .. ' \
 	' .. app.vote.image)
@@ -162,7 +199,8 @@ app.result.service.update = function()
 			return
 		end
 	end
-	docker.cmd('service create --replicas 3 \
+	docker.cmd('service create \
+	--replicas 3 \
 	-p 5001:80 \
 	-p 5858:5858 \
 	--network=' .. app.front_tier.name .. ' \
@@ -188,13 +226,14 @@ app.worker.run = function()
 	--network ' .. app.back_tier.name .. ' \
 	' .. app.worker.image)
 end
--- app.worker.dev = function()
--- 	docker.cmd('run \
--- 	-ti \
--- 	--network ' .. app.back_tier.name .. ' \
--- 	' .. app.worker.image .. ' \
--- 	')
--- end
+app.worker.dev = function()
+	docker.cmd('run \
+	-ti \
+	-v ' .. docker.project.root .. '/worker/src/Worker:/code/src/Worker \
+	--network ' .. app.back_tier.name .. ' \
+	' .. app.worker.image .. ' \
+	bash -c "cd src/Worker && bash"')
+end
 app.worker.service = {}
 app.worker.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
@@ -204,8 +243,9 @@ app.worker.service.update = function()
 			return
 		end
 	end
-	docker.cmd('service create --replicas 3 \
-	--network=' .. app.back_tier.name .. ' \
+	docker.cmd('service create \
+	--replicas 3 \
+	--network ' .. app.back_tier.name .. ' \
 	' .. app.worker.image)
 end
 
@@ -217,7 +257,6 @@ app.redis.alias = 'redis'
 app.redis.run = function()
 	docker.cmd('run \
 	-d \
-	--name ' .. app.redis.alias .. ' \
 	--network ' .. app.back_tier.name .. ' \
 	--network-alias ' .. app.redis.alias .. ' \
 	-p 6379 \
@@ -227,12 +266,14 @@ app.redis.service = {}
 app.redis.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
+		print("BLA:", service.image)
 		if service.image == app.redis.image then
-			docker.cmd('service update --replicas 1 --update-delay 10s ' .. service.id)
+			-- docker.cmd('service update ' .. service.id)
 			return
 		end
 	end
-	docker.cmd('service create --replicas 1 \
+	docker.cmd('service create \
+	--mode global \
 	--network ' .. app.back_tier.name .. ' \
 	--name ' .. app.redis.alias .. ' \
 	' .. app.redis.image)
@@ -246,7 +287,6 @@ app.db.alias = 'db'
 app.db.run = function()
 	docker.cmd('run \
 	-d \
-	--name ' .. app.db.alias .. ' \
 	--network ' .. app.back_tier.name .. ' \
 	--network-alias ' .. app.db.alias .. ' \
 	-v ' .. app.db_data.name .. ':/var/lib/postgresql/data \
@@ -258,13 +298,15 @@ app.db.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
 		if service.image == app.db.image then
-			docker.cmd('service update --replicas 1 --update-delay 10s ' .. service.id)
+			-- docker.cmd('service update ' .. service.id)
 			return
 		end
 	end
-	docker.cmd('service create --replicas 1 \
+	docker.cmd('service create \
+	--mode global \
 	--network ' .. app.back_tier.name .. ' \
 	--name ' .. app.db.alias .. ' \
+	--mount src=' .. app.db_data.name .. ',dst=/var/lib/postgresql/data \
 	' .. app.db.image)
 end
 
@@ -404,7 +446,11 @@ tunnel.originalDockerHost = nil
 
 -- establishes ssh tunnel to target Docker host and returns
 -- containers acting as proxy
-tunnel.start = function(addr)
+tunnel.start = function(addr, privateKeyPath)
+	-- privateKeyPath default value
+	if privateKeyPath == nil or privateKeyPath == '' then
+		privateKeyPath = os.home() .. '/.ssh/id_rsa'
+	end
 
 	if tunnel.originalDockerHost == nil then
 		tunnel.originalDockerHost = os.getEnv("DOCKER_HOST")
@@ -418,7 +464,7 @@ tunnel.start = function(addr)
 		'--filter label=docker.project.id:' .. docker.project.id)
 
 	if #containers == 0 then
-		docker.cmd('run -ti -v ' .. os.home() .. '/.ssh/id_rsa:/ssh_id ' ..
+		docker.cmd('run -ti -v ' .. privateKeyPath .. ':/ssh_id ' ..
 			'-p 127.0.0.1::2375 --label tunnel:' .. addr .. ' ' ..
 			'aduermael/docker-tunnel ' .. addr .. ' -i /ssh_id -p')
 
@@ -484,11 +530,12 @@ end
 -- OPS TERRITORY
 ----------------
 
---
+-- deploy in production
 function deploy()
 	print("ATTENTION: if you are prompted for a password, please do a ctrl+p ctrl+q after having submitted it.")
 	-- connect to production Swarm
-	local tunnel_container = tunnel.start('138.197.210.55')
+	local privateKeyPath = os.home() .. '/.ssh/id_rsa_srv'
+	local tunnel_container = tunnel.start('138.68.233.117', privateKeyPath)
 
 	print("🐳 > build images...")
 	build()
