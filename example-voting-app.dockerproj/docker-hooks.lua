@@ -195,12 +195,12 @@ app.result.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
 		if service.image == app.result.image then
-			docker.cmd('service update --replicas 3 --update-delay 10s --force ' .. service.id)
+			docker.cmd('service update --replicas 1 --update-delay 10s --force ' .. service.id)
 			return
 		end
 	end
 	docker.cmd('service create \
-	--replicas 3 \
+	--replicas 1 \
 	-p 5001:80 \
 	-p 5858:5858 \
 	--network=' .. app.front_tier.name .. ' \
@@ -239,12 +239,12 @@ app.worker.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
 		if service.image == app.worker.image then
-			docker.cmd('service update --replicas 3 --update-delay 10s --force ' .. service.id)
+			docker.cmd('service update --replicas 1 --update-delay 10s --force ' .. service.id)
 			return
 		end
 	end
 	docker.cmd('service create \
-	--replicas 3 \
+	--replicas 1 \
 	--network ' .. app.back_tier.name .. ' \
 	' .. app.worker.image)
 end
@@ -266,9 +266,8 @@ app.redis.service = {}
 app.redis.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
-		print("BLA:", service.image)
-		if service.image == app.redis.image then
-			-- docker.cmd('service update ' .. service.id)
+		if service.name == app.redis.alias then
+			docker.cmd('service update ' .. service.id)
 			return
 		end
 	end
@@ -297,8 +296,8 @@ app.db.service = {}
 app.db.service.update = function()
 	local services = docker.service.list('--filter label=docker.project.id:' .. docker.project.id)
 	for i, service in ipairs(services) do
-		if service.image == app.db.image then
-			-- docker.cmd('service update ' .. service.id)
+		if service.name == app.db.alias then
+			docker.cmd('service update ' .. service.id)
 			return
 		end
 	end
@@ -464,7 +463,7 @@ tunnel.start = function(addr, privateKeyPath)
 		'--filter label=docker.project.id:' .. docker.project.id)
 
 	if #containers == 0 then
-		docker.cmd('run -ti -v ' .. privateKeyPath .. ':/ssh_id ' ..
+		docker.cmd('run -d -v ' .. privateKeyPath .. ':/ssh_id ' ..
 			'-p 127.0.0.1::2375 --label tunnel:' .. addr .. ' ' ..
 			'aduermael/docker-tunnel ' .. addr .. ' -i /ssh_id -p')
 
@@ -532,10 +531,9 @@ end
 
 -- deploy in production
 function deploy()
-	print("ATTENTION: if you are prompted for a password, please do a ctrl+p ctrl+q after having submitted it.")
 	-- connect to production Swarm
 	local privateKeyPath = os.home() .. '/.ssh/id_rsa_srv'
-	local tunnel_container = tunnel.start('138.68.233.117', privateKeyPath)
+	local tunnel_container = tunnel.start('198.199.107.26', privateKeyPath)
 
 	print("🐳 > build images...")
 	build()
